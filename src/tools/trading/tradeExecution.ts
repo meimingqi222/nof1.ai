@@ -27,6 +27,7 @@ import { createLogger } from "../../utils/loggerUtils";
 import { getChinaTimeISO } from "../../utils/timeUtils";
 import { RISK_PARAMS } from "../../config/riskParams";
 import { getQuantoMultiplier } from "../../utils/contractUtils";
+import { comprehensiveRiskCheck, getDynamicStopLoss } from "../../utils/riskControl";
 
 const logger = createLogger({
   name: "trade-execution",
@@ -145,6 +146,37 @@ export const openPositionTool = createTool({
           message: `账户可用资金异常: ${availableBalance} USDT`,
         };
       }
+      
+      // 5. 【新增】综合风控检查
+      logger.info(`执行综合风控检查: ${symbol}, 金额=${amountUsdt} USDT, 杠杆=${leverage}x`);
+      
+      const riskCheck = await comprehensiveRiskCheck({
+        symbol,
+        side,
+        amountUsdt,
+        leverage,
+        existingPositions: activePositions.map((p: any) => ({
+          symbol: p.contract.replace("_USDT", ""),
+          side: Number.parseInt(p.size || "0") > 0 ? "long" : "short",
+        })),
+      });
+      
+      // 输出警告信息
+      if (riskCheck.warnings.length > 0) {
+        logger.warn(`⚠️  风险警告:\n${riskCheck.warnings.map(w => `  - ${w}`).join("\n")}`);
+      }
+      
+      // 如果有阻断因素，拒绝开仓
+      if (!riskCheck.approved) {
+        return {
+          success: false,
+          message: `风控检查未通过:\n${riskCheck.blockers.map(b => `  - ${b}`).join("\n")}`,
+        };
+      }
+      
+      // 6. 【新增】动态止损线检查
+      const dynamicStopLoss = getDynamicStopLoss(leverage);
+      logger.info(`动态止损线: ${dynamicStopLoss}% (杠杆${leverage}x)`);
       
       // 5. 检查账户回撤（从数据库获取初始净值和峰值净值）
       // 注释：已移除回撤10%禁止开仓的限制

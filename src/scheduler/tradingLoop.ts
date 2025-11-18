@@ -27,6 +27,8 @@ import { createExchangeClient } from "../services/exchangeClient";
 import { getChinaTimeISO } from "../utils/timeUtils";
 import { RISK_PARAMS } from "../config/riskParams";
 import { getQuantoMultiplier } from "../utils/contractUtils";
+import { comprehensiveDataCheck } from "../utils/dataQuality";
+import { getDynamicStopLoss } from "../utils/riskControl";
 
 const logger = createLogger({
   name: "trading-loop",
@@ -1219,6 +1221,28 @@ async function executeTradingDecision() {
       logger.error("持仓同步失败:", error as any);
     }
     
+    // 3.5 【新增】数据质量检查
+    logger.info("执行数据质量检查...");
+    const dataQualityReport = comprehensiveDataCheck({
+      marketData,
+      accountInfo,
+      positions,
+    });
+    
+    if (!dataQualityReport.isValid) {
+      logger.error("❌ 数据质量检查失败:");
+      dataQualityReport.errors.forEach(err => logger.error(`  - ${err}`));
+      logger.error("跳过本次交易周期");
+      return;
+    }
+    
+    if (dataQualityReport.warnings.length > 0) {
+      logger.warn("⚠️  数据质量警告:");
+      dataQualityReport.warnings.forEach(warn => logger.warn(`  - ${warn}`));
+    } else {
+      logger.info("✅ 数据质量检查通过");
+    }
+    
     // 4. ====== 强制风控检查（在AI执行前） ======
     const exchangeClient = createExchangeClient();
     
@@ -1274,16 +1298,16 @@ async function executeTradingDecision() {
         closeReason = `持仓时间已达 ${holdingHours.toFixed(1)} 小时，超过${MAX_HOLDING_HOURS}小时限制`;
       }
       
-      // b) 极端止损保护（防止爆仓，最后的安全网）
+      // b) 【优化】动态极端止损保护（根据杠杆调整）
       // 只在极端情况下强制平仓，避免账户爆仓
       // 常规止损由AI决策，这里只是最后的安全网
-      const EXTREME_STOP_LOSS = RISK_PARAMS.EXTREME_STOP_LOSS_PERCENT; // 从环境变量读取
+      const EXTREME_STOP_LOSS = getDynamicStopLoss(leverage); // 使用动态止损线
       
-      logger.info(`${symbol} 极端止损检查: 当前盈亏=${pnlPercent.toFixed(2)}%, 极端止损线=${EXTREME_STOP_LOSS}%`);
+      logger.info(`${symbol} 动态止损检查: 当前盈亏=${pnlPercent.toFixed(2)}%, 止损线=${EXTREME_STOP_LOSS}% (杠杆${leverage}x)`);
       
       if (pnlPercent <= EXTREME_STOP_LOSS) {
         shouldClose = true;
-        closeReason = `触发极端止损保护 (${pnlPercent.toFixed(2)}% ≤ ${EXTREME_STOP_LOSS}%，防止爆仓)`;
+        closeReason = `触发动态止损保护 (${pnlPercent.toFixed(2)}% ≤ ${EXTREME_STOP_LOSS}%，杠杆${leverage}x，防止爆仓)`;
         logger.error(`${closeReason}`);
       }
       
