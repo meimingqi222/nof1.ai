@@ -801,6 +801,7 @@ class TradingMonitor {
         sessionStorage.setItem('close_position_password', password);
         this.updateLoginButton();
         this.loadPositionsData(); // 重新加载持仓以显示平仓按钮
+        checkCircuitBreakerStatus(); // 刷新熔断状态以显示解除按钮
         this.showToast('登录成功', '现在可以进行平仓操作了', 'success');
         console.log('登录成功');
     }
@@ -812,6 +813,7 @@ class TradingMonitor {
         sessionStorage.removeItem('close_position_password');
         this.updateLoginButton();
         this.loadPositionsData(); // 重新加载持仓以隐藏平仓按钮
+        checkCircuitBreakerStatus(); // 刷新熔断状态以隐藏解除按钮
         this.showToast('已退出', '已退出登录状态', 'info');
         console.log('已退出登录');
     }
@@ -972,9 +974,11 @@ async function checkCircuitBreakerStatus() {
             circuitBreakerBadge.className = 'circuit-breaker-badge active';
             
             // 如果已登录，显示解除按钮
-            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            const isLoggedIn = sessionStorage.getItem('close_position_password') !== null;
             if (isLoggedIn && btnResetBreaker) {
                 btnResetBreaker.style.display = 'inline-block';
+            } else if (btnResetBreaker) {
+                btnResetBreaker.style.display = 'none';
             }
             
             // 显示恢复时间
@@ -999,10 +1003,12 @@ async function checkCircuitBreakerStatus() {
 
 // 重置熔断
 async function resetCircuitBreaker() {
-    const password = localStorage.getItem('closePositionPassword');
+    const password = sessionStorage.getItem('close_position_password');
     
     if (!password) {
-        showToast('请先登录', 'error');
+        if (monitor) {
+            monitor.showToast('未登录', '请先登录后再进行解除熔断操作', 'warning');
+        }
         return;
     }
     
@@ -1022,14 +1028,24 @@ async function resetCircuitBreaker() {
         const data = await response.json();
         
         if (data.success) {
-            showToast('熔断已解除', 'success');
+            if (monitor) {
+                monitor.showToast('熔断已解除', '系统已恢复正常交易', 'success');
+            }
             await checkCircuitBreakerStatus(); // 刷新状态
         } else {
-            showToast(data.message || '解除失败', 'error');
+            if (monitor) {
+                monitor.showToast('解除失败', data.message || '操作失败', 'error');
+            }
+            // 如果是密码错误，自动退出登录
+            if (response.status === 403 && monitor) {
+                monitor.logout();
+            }
         }
     } catch (error) {
         console.error('重置熔断失败:', error);
-        showToast('操作失败', 'error');
+        if (monitor) {
+            monitor.showToast('操作失败', error.message, 'error');
+        }
     }
 }
 
