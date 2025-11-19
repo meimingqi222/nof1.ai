@@ -29,6 +29,7 @@ import { RISK_PARAMS } from "../config/riskParams";
 import { getChinaTimeISO } from "../utils/timeUtils";
 import { getQuantoMultiplier } from "../utils/contractUtils";
 import { ipBlacklistMiddleware } from "../middleware/ipBlacklist";
+import { checkCircuitBreaker, resetCircuitBreaker } from "../utils/riskControl";
 
 const logger = createLogger({
   name: "api-routes",
@@ -393,6 +394,73 @@ export function createApiRoutes() {
       });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * 获取熔断状态
+   */
+  app.get("/api/circuit-breaker", async (c) => {
+    try {
+      const status = await checkCircuitBreaker();
+      
+      return c.json({
+        isActive: status.shouldHalt,
+        reason: status.reason || null,
+        resumeTime: status.resumeTime ? status.resumeTime.toISOString() : null,
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * 重置熔断状态 - 需要验证密码
+   */
+  app.post("/api/reset-circuit-breaker", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { password } = body;
+      
+      // 验证密码 - 使用清仓密码
+      const correctPassword = process.env.CLOSE_POSITION_PASSWORD;
+      
+      if (!correctPassword) {
+        logger.error('清仓密码未配置 - 请在环境变量中设置 CLOSE_POSITION_PASSWORD');
+        return c.json({ 
+          success: false, 
+          message: "功能未启用" 
+        }, 403);
+      }
+      
+      if (!password || password !== correctPassword) {
+        logger.warn('重置熔断密码验证失败');
+        return c.json({ success: false, message: "密码错误" }, 403);
+      }
+      
+      logger.info('开始手动重置熔断状态');
+      
+      const success = await resetCircuitBreaker();
+      
+      if (success) {
+        logger.info('✅ 熔断已成功重置');
+        return c.json({
+          success: true,
+          message: "熔断已重置，系统可以恢复交易",
+        });
+      } else {
+        logger.error('❌ 重置熔断失败');
+        return c.json({
+          success: false,
+          message: "重置失败，请检查日志",
+        }, 500);
+      }
+    } catch (error: any) {
+      logger.error("重置熔断失败:", error);
+      return c.json({ 
+        success: false, 
+        message: `重置失败: ${error.message}` 
+      }, 500);
     }
   });
 

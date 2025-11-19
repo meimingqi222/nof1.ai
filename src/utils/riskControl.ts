@@ -163,10 +163,94 @@ export interface CircuitBreakerStatus {
 }
 
 /**
+ * 记录熔断状态到数据库
+ */
+async function recordCircuitBreaker(reason: string, resumeTime: Date): Promise<void> {
+  try {
+    await dbClient.execute({
+      sql: `INSERT INTO circuit_breaker_log (reason, triggered_at, resume_at, status) 
+            VALUES (?, ?, ?, 'active')`,
+      args: [reason, new Date().toISOString(), resumeTime.toISOString()],
+    });
+  } catch (error) {
+    logger.error("记录熔断状态失败:", error as any);
+  }
+}
+
+/**
+ * 检查是否有活跃的熔断状态
+ */
+async function getActiveCircuitBreaker(): Promise<CircuitBreakerStatus | null> {
+  try {
+    const result = await dbClient.execute({
+      sql: `SELECT reason, resume_at FROM circuit_breaker_log 
+            WHERE status = 'active' 
+            ORDER BY triggered_at DESC LIMIT 1`,
+      args: [],
+    });
+    
+    if (result.rows.length === 0) {
+      return null;
+    }
+    
+    const row = result.rows[0];
+    const resumeTime = new Date(row.resume_at as string);
+    const now = new Date();
+    
+    // 如果已经过了恢复时间，自动解除熔断
+    if (now >= resumeTime) {
+      await dbClient.execute({
+        sql: `UPDATE circuit_breaker_log 
+              SET status = 'expired' 
+              WHERE status = 'active'`,
+        args: [],
+      });
+      logger.info("熔断已自动解除（时间到期）");
+      return null;
+    }
+    
+    return {
+      shouldHalt: true,
+      reason: row.reason as string,
+      resumeTime,
+    };
+  } catch (error) {
+    logger.error("查询熔断状态失败:", error as any);
+    return null;
+  }
+}
+
+/**
+ * 手动解除熔断
+ */
+export async function resetCircuitBreaker(): Promise<boolean> {
+  try {
+    const result = await dbClient.execute({
+      sql: `UPDATE circuit_breaker_log 
+            SET status = 'manually_reset' 
+            WHERE status = 'active'`,
+      args: [],
+    });
+    
+    logger.info("熔断已手动解除");
+    return true;
+  } catch (error) {
+    logger.error("手动解除熔断失败:", error as any);
+    return false;
+  }
+}
+
+/**
  * 检查是否触发熔断
  */
 export async function checkCircuitBreaker(): Promise<CircuitBreakerStatus> {
   try {
+    // 首先检查是否有活跃的熔断状态
+    const activeBreaker = await getActiveCircuitBreaker();
+    if (activeBreaker) {
+      return activeBreaker;
+    }
+    
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
@@ -193,9 +277,11 @@ export async function checkCircuitBreaker(): Promise<CircuitBreakerStatus> {
     // 单日亏损超过10%触发熔断
     if (dailyLossPercent < -10) {
       const resumeTime = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+      const reason = `单日亏损${dailyLossPercent.toFixed(2)}%，触发熔断保护`;
+      await recordCircuitBreaker(reason, resumeTime);
       return {
         shouldHalt: true,
-        reason: `单日亏损${dailyLossPercent.toFixed(2)}%，触发熔断保护`,
+        reason,
         resumeTime,
       };
     }
@@ -215,9 +301,11 @@ export async function checkCircuitBreaker(): Promise<CircuitBreakerStatus> {
       
       if (allLoss) {
         const resumeTime = new Date(now.getTime() + 2 * 60 * 60 * 1000); // 2小时后恢复
+        const reason = "连续5笔交易亏损，触发熔断保护";
+        await recordCircuitBreaker(reason, resumeTime);
         return {
           shouldHalt: true,
-          reason: "连续5笔交易亏损，触发熔断保护",
+          reason,
           resumeTime,
         };
       }

@@ -103,6 +103,14 @@ export interface SystemConfig {
   updated_at: string;
 }
 
+export interface CircuitBreakerLog {
+  id: number;
+  reason: string;
+  triggered_at: string;
+  resume_at: string;
+  status: 'active' | 'expired' | 'manually_reset';
+}
+
 /**
  * SQL 建表语句
  */
@@ -196,6 +204,15 @@ CREATE TABLE IF NOT EXISTS system_config (
   updated_at TEXT NOT NULL
 );
 
+-- 熔断日志表
+CREATE TABLE IF NOT EXISTS circuit_breaker_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  reason TEXT NOT NULL,
+  triggered_at TEXT NOT NULL,
+  resume_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active'
+);
+
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
@@ -203,5 +220,6 @@ CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON trading_signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_symbol ON trading_signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_history_timestamp ON account_history(timestamp);
 CREATE INDEX IF NOT EXISTS idx_decisions_timestamp ON agent_decisions(timestamp);
+CREATE INDEX IF NOT EXISTS idx_circuit_breaker_status ON circuit_breaker_log(status, triggered_at);
 `;
 

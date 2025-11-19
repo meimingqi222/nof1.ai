@@ -951,3 +951,101 @@ document.addEventListener('DOMContentLoaded', () => {
     // 初始化涨跌颜色切换功能
     monitor.initColorSchemeToggle();
 });
+
+
+// ==================== 熔断状态管理 ====================
+
+// 检查熔断状态
+async function checkCircuitBreakerStatus() {
+    try {
+        const response = await fetch('/api/circuit-breaker');
+        const data = await response.json();
+        
+        const circuitBreakerItem = document.getElementById('circuit-breaker-item');
+        const circuitBreakerBadge = document.getElementById('circuit-breaker-badge');
+        const btnResetBreaker = document.getElementById('btn-reset-breaker');
+        
+        if (data.isActive) {
+            // 显示熔断状态
+            circuitBreakerItem.style.display = 'flex';
+            circuitBreakerBadge.textContent = data.reason || '已触发';
+            circuitBreakerBadge.className = 'circuit-breaker-badge active';
+            
+            // 如果已登录，显示解除按钮
+            const isLoggedIn = localStorage.getItem('isLoggedIn') === 'true';
+            if (isLoggedIn && btnResetBreaker) {
+                btnResetBreaker.style.display = 'inline-block';
+            }
+            
+            // 显示恢复时间
+            if (data.resumeTime) {
+                const resumeTime = new Date(data.resumeTime);
+                const now = new Date();
+                const diffMs = resumeTime - now;
+                const diffMins = Math.ceil(diffMs / 60000);
+                
+                if (diffMins > 0) {
+                    circuitBreakerBadge.textContent += ` (${diffMins}分钟后自动解除)`;
+                }
+            }
+        } else {
+            // 隐藏熔断状态
+            circuitBreakerItem.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('检查熔断状态失败:', error);
+    }
+}
+
+// 重置熔断
+async function resetCircuitBreaker() {
+    const password = localStorage.getItem('closePositionPassword');
+    
+    if (!password) {
+        showToast('请先登录', 'error');
+        return;
+    }
+    
+    if (!confirm('确认要解除熔断状态吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/reset-circuit-breaker', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ password }),
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showToast('熔断已解除', 'success');
+            await checkCircuitBreakerStatus(); // 刷新状态
+        } else {
+            showToast(data.message || '解除失败', 'error');
+        }
+    } catch (error) {
+        console.error('重置熔断失败:', error);
+        showToast('操作失败', 'error');
+    }
+}
+
+// 初始化熔断重置按钮
+function initCircuitBreakerReset() {
+    const btnResetBreaker = document.getElementById('btn-reset-breaker');
+    if (btnResetBreaker) {
+        btnResetBreaker.addEventListener('click', resetCircuitBreaker);
+    }
+}
+
+// 在页面加载时初始化
+document.addEventListener('DOMContentLoaded', () => {
+    initCircuitBreakerReset();
+    checkCircuitBreakerStatus();
+    
+    // 每30秒检查一次熔断状态
+    setInterval(checkCircuitBreakerStatus, 30000);
+});

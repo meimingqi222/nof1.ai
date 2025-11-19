@@ -2299,3 +2299,74 @@ body {
     background: var(--accent-green);
 }
 
+
+
+/* ==================== 熔断状态样式 ==================== */
+
+.circuit-breaker-value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.circuit-breaker-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    font-weight: bold;
+    background-color: rgba(255, 0, 0, 0.1);
+    color: var(--accent-red);
+    border: 1px solid var(--accent-red);
+    animation: pulse-red 2s ease-in-out infinite;
+}
+
+.circuit-breaker-badge.active {
+    background-color: rgba(255, 0, 0, 0.2);
+}
+
+@keyframes pulse-red {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.6;
+    }
+}
+
+.btn-reset-breaker {
+    padding: 4px 12px;
+    background-color: rgba(0, 255, 170, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85em;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
+}
+
+.btn-reset-breaker:hover {
+    background-color: rgba(0, 255, 170, 0.2);
+    border-color: var(--text-primary);
+    transform: translateY(-1px);
+}
+
+.btn-reset-breaker:active {
+    transform: translateY(0);
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+    .circuit-breaker-value {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .btn-reset-breaker {
+        width: 100%;
+        text-align: center;
+    }
+}
