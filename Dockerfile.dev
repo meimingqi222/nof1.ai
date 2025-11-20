@@ -26,7 +26,7 @@ COPY tsconfig.json ./
 RUN mkdir -p .voltagent logs
 
 # 暴露端口
-EXPOSE 3100
+EXPOSE ${PORT:-3100}
 
 # 开发环境使用 tsx watch 支持热重载
 CMD ["npm", "run", "dev"]

@@ -29,12 +29,12 @@ RUN mkdir -p .voltagent
 ENV NODE_ENV=production
 ENV TZ=Asia/Shanghai
 
-# 暴露端口
-EXPOSE 3100
+# 暴露端口（从环境变量读取，默认3100）
+EXPOSE ${PORT:-3100}
 
-# 健康检查
+# 健康检查（使用环境变量中的端口）
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3100/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+  CMD sh -c "node -e \"require('http').get('http://localhost:' + (process.env.PORT || 3100) + '/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))\""
 
 # 启动应用
 CMD ["npm", "run", "start"]
