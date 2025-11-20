@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  open-nof1-ai-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: open-nof1.ai-dev
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3100}:3100"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=development
+      - TZ=Asia/Shanghai
+    volumes:
+      # 挂载源码目录，支持热重载
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./scripts:/app/scripts
+      - ./.env:/app/.env
+      - ./package.json:/app/package.json
+      - ./tsconfig.json:/app/tsconfig.json
+      
+      # 挂载数据库目录以持久化数据
+      - ./voltagent-data:/app/.voltagent
+      
+      # 挂载日志目录
+      - ./logs:/app/logs
+      
+      # 不挂载node_modules，使用容器内的
+      # 这样可以避免本地和容器的依赖冲突
+    networks:
+      - trading-network-dev
+    command: npm run dev
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3100/api/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  trading-network-dev:
+    driver: bridge

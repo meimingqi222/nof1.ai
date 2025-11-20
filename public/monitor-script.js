@@ -39,6 +39,18 @@ class TradingMonitor {
         this.loadGitHubStars(); // 加载 GitHub 星标数
         this.initLoginModal(); // 初始化登录弹窗
         this.checkLoginStatus(); // 检查登录状态
+        this.initTriggerTradingButton(); // 初始化手动触发交易按钮
+        this.loadNextExecutionTime(); // 加载下次执行时间
+    }
+
+    // 初始化手动触发交易按钮
+    initTriggerTradingButton() {
+        const triggerBtn = document.getElementById('btn-trigger-trading');
+        if (triggerBtn) {
+            triggerBtn.addEventListener('click', () => {
+                this.triggerTrading();
+            });
+        }
     }
 
     // 加载初始数据
@@ -456,6 +468,11 @@ class TradingMonitor {
         setInterval(async () => {
             await this.updateEquityChart();
         }, 30000);
+
+        // 每10秒更新下次执行时间
+        setInterval(async () => {
+            await this.loadNextExecutionTime();
+        }, 10000);
     }
 
     // 复制ticker内容实现无缝滚动
@@ -829,6 +846,107 @@ class TradingMonitor {
                 loginBtn.textContent = '登录';
                 loginBtn.classList.remove('logged-in');
             }
+        }
+        
+        // 同时更新手动触发交易按钮的显示状态
+        const triggerBtn = document.getElementById('btn-trigger-trading');
+        if (triggerBtn) {
+            if (this.isLoggedIn) {
+                triggerBtn.style.display = 'inline-block';
+            } else {
+                triggerBtn.style.display = 'none';
+            }
+        }
+    }
+
+    // 手动触发交易
+    async triggerTrading() {
+        if (!this.isLoggedIn || !this.password) {
+            this.showToast('未登录', '请先登录后再进行手动触发交易', 'warning');
+            return;
+        }
+
+        if (!confirm('确认要立即执行交易决策吗？')) {
+            return;
+        }
+
+        try {
+            const triggerBtn = document.getElementById('btn-trigger-trading');
+            if (triggerBtn) {
+                triggerBtn.disabled = true;
+                triggerBtn.textContent = '执行中...';
+            }
+
+            console.log('开始手动触发交易');
+
+            const response = await fetch('/api/trigger-trading', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    password: this.password,
+                }),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showToast('执行成功', '交易决策已执行', 'success');
+                console.log('交易触发成功:', result);
+                
+                // 刷新数据
+                await Promise.all([
+                    this.loadAccountData(),
+                    this.loadPositionsData(),
+                    this.loadTradesData(),
+                    this.loadNextExecutionTime(),
+                ]);
+            } else {
+                // 如果是密码错误，自动退出登录
+                if (response.status === 403) {
+                    this.showToast('密码错误', '密码验证失败，已自动退出登录', 'error');
+                    this.logout();
+                } else {
+                    this.showToast('执行失败', result.message, 'error');
+                }
+                console.error('交易触发失败:', result);
+            }
+        } catch (error) {
+            console.error('触发交易请求失败:', error);
+            this.showToast('执行失败', error.message, 'error');
+        } finally {
+            const triggerBtn = document.getElementById('btn-trigger-trading');
+            if (triggerBtn) {
+                triggerBtn.disabled = false;
+                triggerBtn.textContent = '立即执行交易';
+            }
+        }
+    }
+
+    // 加载下次执行时间
+    async loadNextExecutionTime() {
+        try {
+            const response = await fetch('/api/next-execution');
+            const data = await response.json();
+            
+            const nextTimeEl = document.getElementById('next-execution-time');
+            if (nextTimeEl && data.nextExecutionTime) {
+                const nextTime = new Date(data.nextExecutionTime);
+                const now = new Date();
+                const diffMs = nextTime - now;
+                const diffMinutes = Math.ceil(diffMs / 60000);
+                
+                if (diffMinutes > 0) {
+                    nextTimeEl.textContent = `${diffMinutes}分钟后 (${nextTime.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })})`;
+                } else {
+                    nextTimeEl.textContent = '即将执行...';
+                }
+            } else if (nextTimeEl) {
+                nextTimeEl.textContent = '未知';
+            }
+        } catch (error) {
+            console.error('加载下次执行时间失败:', error);
         }
     }
 

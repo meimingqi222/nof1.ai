@@ -68,7 +68,14 @@
     "docker:down": "docker compose down",
     "docker:restart": "docker compose restart",
     "docker:prod:up": "docker compose -f docker-compose.prod.yml up -d",
-    "docker:prod:down": "docker compose -f docker-compose.prod.yml down"
+    "docker:prod:down": "docker compose -f docker-compose.prod.yml down",
+    "docker:dev:start": "bash scripts/docker-dev-start.sh",
+    "docker:dev:stop": "bash scripts/docker-dev-stop.sh",
+    "docker:dev:restart": "bash scripts/docker-dev-restart.sh",
+    "docker:dev:logs": "bash scripts/docker-dev-logs.sh",
+    "docker:dev:up": "docker compose -f docker-compose.dev.yml up -d",
+    "docker:dev:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:dev:build": "docker compose -f docker-compose.dev.yml build"
   },
   "dependencies": {
     "@ai-sdk/openai": "^2.0.53",

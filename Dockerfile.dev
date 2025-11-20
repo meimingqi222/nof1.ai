@@ -1,0 +1,32 @@
+# 开发环境 Dockerfile
+# 支持热重载和源码挂载
+
+FROM node:20-alpine
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装基础依赖
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    sqlite
+
+# 复制 package.json 和 package-lock.json
+COPY package*.json ./
+
+# 安装依赖（包括开发依赖）
+RUN npm ci
+
+# 复制 tsconfig.json
+COPY tsconfig.json ./
+
+# 创建必要的目录
+RUN mkdir -p .voltagent logs
+
+# 暴露端口
+EXPOSE 3100
+
+# 开发环境使用 tsx watch 支持热重载
+CMD ["npm", "run", "dev"]

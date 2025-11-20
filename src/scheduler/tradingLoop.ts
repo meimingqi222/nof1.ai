@@ -28,7 +28,7 @@ import { getChinaTimeISO } from "../utils/timeUtils";
 import { RISK_PARAMS } from "../config/riskParams";
 import { getQuantoMultiplier } from "../utils/contractUtils";
 import { comprehensiveDataCheck } from "../utils/dataQuality";
-import { getDynamicStopLoss } from "../utils/riskControl";
+import { getDynamicStopLoss, checkCircuitBreaker } from "../utils/riskControl";
 
 const logger = createLogger({
   name: "trading-loop",
@@ -48,6 +48,9 @@ let iterationCount = 0;
 
 // 账户风险配置
 let accountRiskConfig = getAccountRiskConfig();
+
+// 下次执行时间
+let nextExecutionTime: Date | null = null;
 
 /**
  * 确保数值是有效的有限数字，否则返回默认值
@@ -1135,6 +1138,27 @@ async function executeTradingDecision() {
   let positions: any[] = [];
 
   try {
+    // 0. 首先检查熔断状态（关键：确保自动恢复能够触发）
+    try {
+      const circuitBreakerStatus = await checkCircuitBreaker();
+      if (circuitBreakerStatus.shouldHalt) {
+        logger.warn(`⚠️ 系统处于熔断状态: ${circuitBreakerStatus.reason}`);
+        if (circuitBreakerStatus.resumeTime) {
+          const remainingMinutes = Math.ceil((circuitBreakerStatus.resumeTime.getTime() - Date.now()) / 60000);
+          logger.warn(`预计恢复时间: ${circuitBreakerStatus.resumeTime.toISOString()} (剩余${remainingMinutes}分钟)`);
+        }
+        logger.warn("跳过本次交易决策，等待熔断解除");
+        return;
+      } else {
+        logger.debug("✓ 熔断检查通过，系统正常运行");
+      }
+    } catch (error) {
+      logger.error("熔断检查失败:", error as any);
+      // 熔断检查失败时，为安全起见，跳过本次交易
+      logger.warn("为安全起见，跳过本次交易决策");
+      return;
+    }
+    
     // 1. 收集市场数据
     try {
       marketData = await collectMarketData();
@@ -1537,7 +1561,24 @@ async function executeTradingDecision() {
     // 8. 获取最近的AI决策（最近5次）
     let recentDecisions: any[] = [];
     try {
-      recentDecisions = await getRecentDecisions(5);
+      const rawDecisions = await getRecentDecisions(5);
+      
+      // 过滤掉包含"熔断"关键词的决策，避免影响AI判断
+      recentDecisions = rawDecisions.filter((decision: any) => {
+        const decisionText = (decision.decision || '').toLowerCase();
+        const hasCircuitBreakerKeyword = 
+          decisionText.includes('熔断') || 
+          decisionText.includes('circuit breaker') ||
+          decisionText.includes('circuit-breaker');
+        
+        if (hasCircuitBreakerKeyword) {
+          logger.debug(`过滤掉包含熔断关键词的历史决策: #${decision.iteration}`);
+        }
+        
+        return !hasCircuitBreakerKeyword;
+      });
+      
+      logger.info(`历史决策记录: 获取${rawDecisions.length}条，过滤后${recentDecisions.length}条`);
     } catch (error) {
       logger.warn("获取最近决策记录失败:", error as any);
       // 不影响主流程，继续执行
@@ -1555,6 +1596,12 @@ async function executeTradingDecision() {
       recentDecisions,
       positionCount: positions.length,
     });
+    
+    // 调试：输出提示词的前500个字符，检查状态声明
+    logger.debug(`提示词前500字符:\n${prompt.substring(0, 500)}`);
+    logger.debug(`提示词中是否包含"系统状态：正常运行": ${prompt.includes("系统状态：正常运行")}`);
+    logger.debug(`提示词中是否包含"熔断": ${prompt.includes("熔断")}`);
+    logger.debug(`提示词中"熔断"出现次数: ${(prompt.match(/熔断/g) || []).length}`);
     
     // 输出完整提示词到日志
     logger.info("【入参 - AI 提示词】");
@@ -1762,13 +1809,57 @@ export function startTradingLoop() {
   // 立即执行一次
   executeTradingDecision();
   
+  // 计算下次执行时间
+  updateNextExecutionTime(intervalMinutes);
+  
   // 设置定时任务
   const cronExpression = `*/${intervalMinutes} * * * *`;
   cron.schedule(cronExpression, () => {
     executeTradingDecision();
+    updateNextExecutionTime(intervalMinutes);
   });
   
   logger.info(`定时任务已设置: ${cronExpression}`);
+}
+
+/**
+ * 更新下次执行时间
+ */
+function updateNextExecutionTime(intervalMinutes: number) {
+  nextExecutionTime = new Date(Date.now() + intervalMinutes * 60 * 1000);
+  logger.debug(`下次执行时间: ${nextExecutionTime.toISOString()}`);
+}
+
+/**
+ * 获取下次执行时间
+ */
+export function getNextExecutionTime(): Date | null {
+  return nextExecutionTime;
+}
+
+/**
+ * 手动触发交易决策（供API调用）
+ */
+export async function manualTriggerTrading(): Promise<{ success: boolean; message: string }> {
+  try {
+    logger.info("🔵 收到手动触发交易请求");
+    await executeTradingDecision();
+    
+    // 更新下次执行时间
+    const intervalMinutes = Number.parseInt(process.env.TRADING_INTERVAL_MINUTES || "5");
+    updateNextExecutionTime(intervalMinutes);
+    
+    return {
+      success: true,
+      message: "交易决策已执行",
+    };
+  } catch (error: any) {
+    logger.error("手动触发交易失败:", error);
+    return {
+      success: false,
+      message: `执行失败: ${error.message}`,
+    };
+  }
 }
 
 /**

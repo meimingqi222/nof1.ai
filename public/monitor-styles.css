@@ -2357,6 +2357,43 @@ body {
     transform: translateY(0);
 }
 
+/* Trigger Trading Button */
+.btn-trigger-trading {
+    padding: 6px 16px;
+    background-color: rgba(0, 204, 136, 0.15);
+    color: var(--text-secondary);
+    border: 1px solid var(--text-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    font-family: 'Courier New', monospace;
+    transition: all 0.3s ease;
+    font-weight: 500;
+}
+
+.btn-trigger-trading:hover {
+    background-color: rgba(0, 204, 136, 0.25);
+    border-color: var(--text-primary);
+    color: var(--text-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 255, 170, 0.2);
+}
+
+.btn-trigger-trading:active {
+    transform: translateY(0);
+}
+
+.btn-trigger-trading:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-trigger-trading:disabled:hover {
+    background-color: rgba(0, 204, 136, 0.15);
+    transform: none;
+    box-shadow: none;
+}
+
 /* 响应式调整 */
 @media (max-width: 768px) {
     .circuit-breaker-value {

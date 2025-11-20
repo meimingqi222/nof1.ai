@@ -30,6 +30,7 @@ import { getChinaTimeISO } from "../utils/timeUtils";
 import { getQuantoMultiplier } from "../utils/contractUtils";
 import { ipBlacklistMiddleware } from "../middleware/ipBlacklist";
 import { checkCircuitBreaker, resetCircuitBreaker } from "../utils/riskControl";
+import { manualTriggerTrading, getNextExecutionTime } from "../scheduler/tradingLoop";
 
 const logger = createLogger({
   name: "api-routes",
@@ -460,6 +461,74 @@ export function createApiRoutes() {
       return c.json({ 
         success: false, 
         message: `重置失败: ${error.message}` 
+      }, 500);
+    }
+  });
+
+  /**
+   * 获取下次交易执行时间
+   */
+  app.get("/api/next-execution", async (c) => {
+    try {
+      const nextTime = getNextExecutionTime();
+      const intervalMinutes = Number.parseInt(process.env.TRADING_INTERVAL_MINUTES || "20");
+      
+      return c.json({
+        nextExecutionTime: nextTime ? nextTime.toISOString() : null,
+        intervalMinutes,
+        currentTime: new Date().toISOString(),
+      });
+    } catch (error: any) {
+      return c.json({ error: error.message }, 500);
+    }
+  });
+
+  /**
+   * 手动触发交易决策 - 需要验证密码
+   */
+  app.post("/api/trigger-trading", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { password } = body;
+      
+      // 验证密码 - 使用清仓密码
+      const correctPassword = process.env.CLOSE_POSITION_PASSWORD;
+      
+      if (!correctPassword) {
+        logger.error('清仓密码未配置 - 请在环境变量中设置 CLOSE_POSITION_PASSWORD');
+        return c.json({ 
+          success: false, 
+          message: "功能未启用" 
+        }, 403);
+      }
+      
+      if (!password || password !== correctPassword) {
+        logger.warn('手动触发交易密码验证失败');
+        return c.json({ success: false, message: "密码错误" }, 403);
+      }
+      
+      logger.info('开始手动触发交易决策');
+      
+      const result = await manualTriggerTrading();
+      
+      if (result.success) {
+        logger.info('✅ 交易决策已成功触发');
+        return c.json({
+          success: true,
+          message: result.message,
+        });
+      } else {
+        logger.error('❌ 触发交易决策失败');
+        return c.json({
+          success: false,
+          message: result.message,
+        }, 500);
+      }
+    } catch (error: any) {
+      logger.error("手动触发交易失败:", error);
+      return c.json({ 
+        success: false, 
+        message: `触发失败: ${error.message}` 
       }, 500);
     }
   });
