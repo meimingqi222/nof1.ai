@@ -1088,7 +1088,16 @@ async function checkCircuitBreakerStatus() {
         if (data.isActive) {
             // 显示熔断状态
             circuitBreakerItem.style.display = 'flex';
-            circuitBreakerBadge.textContent = data.reason || '已触发';
+            
+            // 构建显示文本
+            let displayText = data.reason || '已触发';
+            
+            // 添加严重等级标识
+            if (data.severityLevel && data.severityLevel > 1) {
+                displayText += ` [等级${data.severityLevel}]`;
+            }
+            
+            circuitBreakerBadge.textContent = displayText;
             circuitBreakerBadge.className = 'circuit-breaker-badge active';
             
             // 如果已登录，显示解除按钮
@@ -1105,9 +1114,48 @@ async function checkCircuitBreakerStatus() {
                 const now = new Date();
                 const diffMs = resumeTime - now;
                 const diffMins = Math.ceil(diffMs / 60000);
+                const diffHours = Math.floor(diffMins / 60);
                 
                 if (diffMins > 0) {
-                    circuitBreakerBadge.textContent += ` (${diffMins}分钟后自动解除)`;
+                    if (diffHours > 0) {
+                        circuitBreakerBadge.textContent += ` (${diffHours}小时${diffMins % 60}分钟后解除)`;
+                    } else {
+                        circuitBreakerBadge.textContent += ` (${diffMins}分钟后解除)`;
+                    }
+                }
+            }
+        } else if (data.isInCooldown) {
+            // 显示冷却期状态
+            circuitBreakerItem.style.display = 'flex';
+            
+            let displayText = '冷却期';
+            if (data.severityLevel && data.severityLevel > 1) {
+                displayText += ` [等级${data.severityLevel}]`;
+            }
+            displayText += ' - 触发阈值降低50%';
+            
+            circuitBreakerBadge.textContent = displayText;
+            circuitBreakerBadge.className = 'circuit-breaker-badge cooldown';
+            
+            // 冷却期不显示解除按钮
+            if (btnResetBreaker) {
+                btnResetBreaker.style.display = 'none';
+            }
+            
+            // 显示冷却期剩余时间
+            if (data.cooldownUntil) {
+                const cooldownTime = new Date(data.cooldownUntil);
+                const now = new Date();
+                const diffMs = cooldownTime - now;
+                const diffMins = Math.ceil(diffMs / 60000);
+                const diffHours = Math.floor(diffMins / 60);
+                
+                if (diffMins > 0) {
+                    if (diffHours > 0) {
+                        circuitBreakerBadge.textContent += ` (${diffHours}小时${diffMins % 60}分钟后结束)`;
+                    } else {
+                        circuitBreakerBadge.textContent += ` (${diffMins}分钟后结束)`;
+                    }
                 }
             }
         } else {

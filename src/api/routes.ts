@@ -409,6 +409,9 @@ export function createApiRoutes() {
         isActive: status.shouldHalt,
         reason: status.reason || null,
         resumeTime: status.resumeTime ? status.resumeTime.toISOString() : null,
+        severityLevel: status.severityLevel || null,
+        isInCooldown: status.isInCooldown || false,
+        cooldownUntil: status.cooldownUntil ? status.cooldownUntil.toISOString() : null,
       });
     } catch (error: any) {
       return c.json({ error: error.message }, 500);

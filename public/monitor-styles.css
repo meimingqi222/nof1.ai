@@ -2326,6 +2326,24 @@ body {
     background-color: rgba(255, 0, 0, 0.2);
 }
 
+.circuit-breaker-badge.cooldown {
+    background-color: rgba(255, 255, 0, 0.1);
+    color: var(--accent-yellow);
+    border: 1px solid var(--accent-yellow);
+    animation: pulse-yellow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-yellow {
+    0%, 100% {
+        opacity: 1;
+        box-shadow: 0 0 5px rgba(255, 255, 0, 0.3);
+    }
+    50% {
+        opacity: 0.8;
+        box-shadow: 0 0 10px rgba(255, 255, 0, 0.5);
+    }
+}
+
 @keyframes pulse-red {
     0%, 100% {
         opacity: 1;
